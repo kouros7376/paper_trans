@@ -1,0 +1,118 @@
+다우오피스  차 세대›활용자료›OpenAPI›전자결재  연동
+전자결재  기안
+업데이트  시 간  7개월  전
+✅ 해당  기 능 이  제공 되 는  다 우오 피 스  상 품  유 형
+무료 서비스형 엔터프라이 즈형 HR형
+스탠다드 스탠다드프리미엄 스탠다드프리미엄 HR
+❌ ❌ ❌
+👉🏼 유형별  제품  안내  보 기  
+본 가이드는  다우오피스  OpenAPI 기 반 의  전자 결 재  연동  절 차를 설명합니 다 .
+제공 방식  : 전체화면 ( 웹 ), 팝 업 ( 웹 ), 모바일 ( 앱  연동 )
+상태 전달  :  callbackUrl을  통해  전자 결 재  처 리 상 태  전 송  API 가  연동  시스 템 으 로  결 재  상 태  변 화  통 지
+서버 : 모든  OpenAPI 호 출 은  시스 템 연동  서 버 (DOAS : https://api.daouoffice.com) 로  수 행
+✅ 전체  연동  흐 름
+1. (선택) 모바일  결 재  #1 – 본 문  저 장  API 로  contentId 생 성
+2. 전자결재  기안  API 호 출  ( 웹  전체 / 팝 업  또 는  모바일  기 안  API)
+3. 기안 성공  시  HTTP 302 Redirect 로  생 성  문서  링 크  반 환  ( 웹 )
+4. 결재 상태  변경  시  전자 결 재  처 리 상 태  전 송  API 가  callbackUrl 로  상 태  전 송
+5. (필요 시 ) 전자결 재  본 문  조회  API 로  기 안  완 료  문서의  본 문  조회
+전자결재  기 안  연동
+다우오피스  OpenAPI 서비 스 의  전자 결 재  기 안  연동을  위한 전자결재  기 안  API 입니다.
+✔ Request URL
+전체화면 :  https://api.daouoffice.com/public/v4/approval/document
+팝업화면 : https://api.daouoffice.com/public/v4/approval/document/popup
+다우오피스  OpenAPI 서비 스 는  시스 템 연동  서 버 로  API 호 출 을  진 행 하기  때 문에  별 도  고 객 사  그 룹 웨 어  URL 이  아 닌
+https://api.daouoffice.com 사 용
+✔ HTTP Method
+POST (Content-Type: application/x-www-form-urlencoded; charset=UTF-8)
+✉ Request Body
+변수 타입 필수사전발급 설명
+clientId String✅✅기존 발급받은  서비 스  인 증  Id key
+clientSecret String✅✅식별/인증을  위한  서비 스  보안  key
+productName String⛔⛔제휴 제품명
+productVersion String⛔⛔제품 버전  정보
+변수 타입 필수사전발급 설명
+clientCompanyNa
+meString⛔⛔제휴사  고객 사  식별  정보
+formCode String✅✅다우오피스  전자결 재  연동서 식  코 드
+전자결재  양식  저장  시  기 타  > 시스 템  연동  > " 사 용 "
+체크 >
+"전자결재연동 _v4" 선 택  > 코 드에  기 입한  코 드 와  일치
+외부시스템에서  기 안  시  사 용 할  양식 의  code 값 으 로
+양식의  고유한  code 를  작성 하 여  두  시스 템  간  일치 하
+도록 작성
+예) 코드  입 력란에  "daouappr01" 입 력 하 여  저 장
+title String✅⛔다우오피스  전자결 재  제 목
+draftEmpNo String⛔⛔양사 시스 템의  사원 ( 인 식 ) 번호  - 기 안자  정보
+사원번호  확 인  할  경우  필 수전 달
+content String✅⛔다우오피스  전자결 재  본 문  HTML
+attachesMultipartFil
+e []⛔⛔전자결재  첨부 파일
+allianceInfo String⛔⛔전자결재  공유정보를  위한  Object[ 배 열 ] 을  따 옴 표 ("") 로  감
+싼 문자열
+callbackUrl String✅⛔[업무시스 템 ]에  ‘전자 결 재  처 리 상 태  전 송  API’ 를  호 출할
+URL
+※ callbackUrl는  80, 443 기 본  포트만  허 용합니 다 .
+ex) https://partner.domain.com/do/document/status
+partnerDocId String⛔⛔[업무시스 템 ] 문서별  고 유 식 별  정보  < 전자 결 재  처 리 상 태
+조회 API>를  이용 할  경우  필 수productName /  productVersion / clientCompanyName 은  외 부  시스 템 의  정보 로 , API 호 출  시  문제  발생  시  로 그
+분석을  위한  참 고용  항 목 이 나  개 발  초 기 에는  생 략 해도  되 지 만 , 정식 연동  시 에는  입 력 해주는  것 이  좋 습니 다 .
+allianceinfo(업무 시스 템에서  전 달 하고 자  하 는  배 열 값 으 로  필 요 시 에만  작성 )
+변수 타입 필수사전발급 설명
+{업무시스 템  생성 }#1 String⛔⛔업무시스템에서  전 달 하 는  연동관 련  고 유정보  #1
+{업무시스 템  생성 }#2 String⛔⛔업무시스템에서  전 달 하 는  연동관 련  고 유정보  #2
+{업무시스 템  생성 }#3 String⛔⛔업무시스템에서  전 달 하 는  연동관 련  고 유정보  #3
+✉ Request 예 시
+POST /public/v4/approval/document/popup HTTP/1.1
+api.daouoffice.com
+Content-Type: multipart/form-data
+{
+"clientId" :"partner.daouoffice.com",
+"clientSecret" : "admin@partner.daouoffice.com",
+"productName" :"제휴서비 스명 ",
+"productVersion" : "제휴서비 스 /제품 버 전 ",
+"clientCompanyName" : "제휴서비 스 /제품  식 별 번호 ",
+"formCode" : "다우오피 스  전자결 재  연동서 식  코 드 ",
+"title" : "다우오피 스  전자결 재  제 목 ",
+"draftEmpNo" :"양사  시스 템  사원 ( 인 식 ) 번호 (ED207)",
+"content" : "본문  내용  HTML 코 드 (approval_list.txt)",
+"attaches" :"전자결재  첨부 파일명 . 확 장자 ",
+"allianceInfo" : "{"key":"","code":"","info":"","detail":{"no":"","value":""}}",
+"callbackUrl" : "https://partner.domain.com/do/document/status",
+"partnerDocId" : "업무시스 템문서별 고 유 식 별 정보 (PartnerDoc_AX14211)"
+}
+API Tester 사용 시  Body 타입을  'Form' 으 로  설 정  후  테 스 트  하기시  바 랍 니 다 . 
+📬Response 
+HTTP 302 Redirect 성공 시 , 302 상태코드 와  함 께  생 성 된  전자 결 재  문서  링 크 로  Redirect
+링크를  통해  새 로  생 성 된  결 재 문서  접 근
+API 자체는  연동  리 턴 값 이  없 으 며 , 전 달 된  데 이 터  검 증 은  통합설정⚙  > 시스 템 연동  > 전자 결 재  연동 로 그 화면에서
+확인
+📌 CallBackUrl 설 명
+다우오피스의  결 재  문서의  상 태  변 경  이 벤 트 가  발생 했 을  때 , 해 당  이 벤 트  정보를  연동  시스 템 으 로  전 달 하기  위한  URL
+전자결재  기안  API 호 출  시  callbackUrl 전 달
+결재 상태  변경  발생  시 , 그 룹 웨 어 가  해 당  URL 로  POST 요 청  전 송
+연동 시스 템에서  요 청  수신  후  유 효 성  검 증  및  후 속  처 리
+👉🏼 CallbackUrl에  구 현된  웹 서비 스 는  POST 요 청 을  반 드 시  처 리 할  수  있어 야  함
+🚫 주요  오 류  코 드  예 시
+코드 내용 설명(Description)
+500유효하지  않은  Body Body 형태를  Form 으 로  설 정 하 세요 .
+901유효하지  않은  client ID client ID를  확 인하 세요 .
+902유효하지  않은  client Secret client Secret을  확 인하 세요 .
+955도메인  코드  오류 oooo는  존 재 하지  않 는  도메 인  코 드입니 다 . 
+ 호출 제한
+기준 제한 조건
+월간 600회 1회당  첨부  용 량  5MB 제안
+추가 도움 이  필 요 하 신 가 요 ?
+이용/기능  문의는  스 피 키 를  이 용해  보세요 .
+기술지원은  상 단  [ 문의 등 록 ] 를  통 해  제공해드 립 니 다 .최근 본  문서
+연차 현황  조회
+연차 이력  조회
+근태 이력  조회
+근태 기록  등록
+근태 유형  등록
+채팅상담
+궁금하신  내용을  스 피 키 에게  물 어보 시 면  인 공 지 능  AI 챗 봇  모 델  기 반 의  답 변 을  해드 립 니 다 . 문제 가  해 결 되 지  않 는  경
+우 상담원과  1:1 실 시 간  채팅  상 담  또 는  문의 등 록 이  가 능 합니 다 .
+문의등록
+관리자이신 가 요 ?
+기술지원은  [ 문의 등 록 ] 를  통 해  제공  해드 립 니 다 .

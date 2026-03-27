@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<!--
+  업무 인수인계서 HTML 양식 템플릿
+  - 다우오피스 전자결재 기안 API의 'content' 파라미터로 전송되는 HTML입니다.
+  - {변수명} 형식의 자리는 Python의 str.format_map()으로 동적 치환됩니다.
+  - <div data-id="appContent"> 는 다우오피스 가이드 필수 태그입니다.
+-->
+<div data-id="appContent">
+
+<div style="font-family: 'Malgun Gothic', dotum, Arial, sans-serif; font-size: 10pt; line-height: 1.6; margin: 0 auto; max-width: 800px;">
+
+  <!-- ===== 문서 제목 ===== -->
+  <div data-id="appTitle" style="text-align: center; margin-bottom: 20px;">
+    <h2 style="font-size: 16pt; font-weight: bold; letter-spacing: 4px; border-bottom: 2px solid #333; padding-bottom: 8px;">
+      업 무 인 수 ∙ 인 계 서
+    </h2>
+  </div>
+
+  <!-- ===== 1. 인적사항 ===== -->
+  <table border="1" cellpadding="6" cellspacing="0"
+         style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+    <colgroup>
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 17%;">
+      <col style="width: 17%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 17%;">
+      <col style="width: 17%;">
+    </colgroup>
+    <thead>
+      <tr style="background-color: #e6e8eb;">
+        <th colspan="8" style="text-align: left; padding: 6px 10px; font-size: 10pt;">
+          1. 인적사항
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- 구분 헤더 행 -->
+      <tr style="background-color: #f5f6f8; text-align: center;">
+        <td colspan="4" style="font-weight: bold; border-right: 2px solid #999;">인 계 자</td>
+        <td colspan="4" style="font-weight: bold;">인 수 자</td>
+      </tr>
+      <!-- 소속 행 -->
+      <tr>
+        <td colspan="2" style="background-color: #f5f6f8; text-align: center; font-weight: bold;">소 속</td>
+        <td colspan="2" style="border-right: 2px solid #999;">
+          <input type="text" name="handOverDept"
+                 data-id="apprPostParam1"
+                 value="{hand_over_dept}"
+                 style="width: 95%; border: none; font-family: inherit; font-size: 10pt;" />
+        </td>
+        <td colspan="2" style="background-color: #f5f6f8; text-align: center; font-weight: bold;">소 속</td>
+        <td colspan="2">
+          <input type="text" name="handInDept"
+                 data-id="apprPostParam2"
+                 value="{hand_in_dept}"
+                 style="width: 95%; border: none; font-family: inherit; font-size: 10pt;" />
+        </td>
+      </tr>
+      <!-- 직위 행 -->
+      <tr>
+        <td colspan="2" style="background-color: #f5f6f8; text-align: center; font-weight: bold;">직 위</td>
+        <td colspan="2" style="border-right: 2px solid #999;">
+          <input type="text" name="handOverPosition"
+                 data-id="apprPostParam3"
+                 value="{hand_over_position}"
+                 style="width: 95%; border: none; font-family: inherit; font-size: 10pt;" />
+        </td>
+        <td colspan="2" style="background-color: #f5f6f8; text-align: center; font-weight: bold;">직 위</td>
+        <td colspan="2">
+          <input type="text" name="handInPosition"
+                 data-id="apprPostParam4"
+                 value="{hand_in_position}"
+                 style="width: 95%; border: none; font-family: inherit; font-size: 10pt;" />
+        </td>
+      </tr>
+      <!-- 성명 행 -->
+      <tr>
+        <td colspan="2" style="background-color: #f5f6f8; text-align: center; font-weight: bold;">성 명</td>
+        <td colspan="2" style="border-right: 2px solid #999;">
+          <input type="text" name="handOverName"
+                 data-id="apprPostParam5"
+                 value="{hand_over_name}"
+                 style="width: 95%; border: none; font-family: inherit; font-size: 10pt;" />
+        </td>
+        <td colspan="2" style="background-color: #f5f6f8; text-align: center; font-weight: bold;">성 명</td>
+        <td colspan="2">
+          <input type="text" name="handInName"
+                 data-id="apprPostParam6"
+                 value="{hand_in_name}"
+                 style="width: 95%; border: none; font-family: inherit; font-size: 10pt;" />
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ===== 2. 업무 인수인계 사항 ===== -->
+  <table border="1" cellpadding="6" cellspacing="0"
+         style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+    <thead>
+      <tr style="background-color: #e6e8eb;">
+        <th colspan="2" style="text-align: left; padding: 6px 10px; font-size: 10pt;">
+          2. 업무 인수∙인계 사항
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- 인수인계 프로젝트 -->
+      <tr>
+        <td style="background-color: #f5f6f8; font-weight: bold; text-align: center; width: 20%; vertical-align: top;">
+          인수∙인계<br>프로젝트
+        </td>
+        <td>
+          <textarea name="project"
+                    data-id="apprPostParam7"
+                    style="width: 98%; min-height: 60px; border: none; font-family: inherit; font-size: 10pt; resize: vertical;"
+                    >{project}</textarea>
+        </td>
+      </tr>
+      <!-- 중요문제점 및 개선사항 -->
+      <tr>
+        <td style="background-color: #f5f6f8; font-weight: bold; text-align: center; vertical-align: top;">
+          중요문제점 및<br>개선사항
+        </td>
+        <td style="padding: 6px;">
+          <!-- 개선사항 1 -->
+          <div style="margin-bottom: 4px;">
+            1.&nbsp;
+            <input type="text" name="issue1"
+                   data-id="apprPostParam8"
+                   value="{issue_1}"
+                   style="width: 90%; border: none; border-bottom: 1px solid #ccc; font-family: inherit; font-size: 10pt;" />
+          </div>
+          <!-- 개선사항 2 -->
+          <div style="margin-bottom: 4px;">
+            2.&nbsp;
+            <input type="text" name="issue2"
+                   data-id="apprPostParam9"
+                   value="{issue_2}"
+                   style="width: 90%; border: none; border-bottom: 1px solid #ccc; font-family: inherit; font-size: 10pt;" />
+          </div>
+          <!-- 개선사항 3 -->
+          <div style="margin-bottom: 4px;">
+            3.&nbsp;
+            <input type="text" name="issue3"
+                   data-id="apprPostParam10"
+                   value="{issue_3}"
+                   style="width: 90%; border: none; border-bottom: 1px solid #ccc; font-family: inherit; font-size: 10pt;" />
+          </div>
+          <!-- 개선사항 4 -->
+          <div>
+            4.&nbsp;
+            <input type="text" name="issue4"
+                   data-id="apprPostParam11"
+                   value="{issue_4}"
+                   style="width: 90%; border: none; border-bottom: 1px solid #ccc; font-family: inherit; font-size: 10pt;" />
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ===== 3. 진행 및 미결사항 ===== -->
+  <table border="1" cellpadding="6" cellspacing="0"
+         style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+    <thead>
+      <tr style="background-color: #e6e8eb;">
+        <th colspan="2" style="text-align: left; padding: 6px 10px; font-size: 10pt;">
+          3. 진행 및 미결사항
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- 프로젝트별 진행사항 -->
+      <tr>
+        <td style="background-color: #f5f6f8; font-weight: bold; text-align: center; width: 20%; vertical-align: top;">
+          프로젝트별<br>진행사항
+        </td>
+        <td>
+          <textarea name="progressStatus"
+                    data-id="apprPostParam12"
+                    style="width: 98%; min-height: 60px; border: none; font-family: inherit; font-size: 10pt; resize: vertical;"
+                    >{progress_status}</textarea>
+        </td>
+      </tr>
+      <!-- 프로젝트별 미결사항 -->
+      <tr>
+        <td style="background-color: #f5f6f8; font-weight: bold; text-align: center; vertical-align: top;">
+          프로젝트별<br>미결사항
+        </td>
+        <td>
+          <textarea name="pendingStatus"
+                    data-id="apprPostParam13"
+                    style="width: 98%; min-height: 60px; border: none; font-family: inherit; font-size: 10pt; resize: vertical;"
+                    >{pending_status}</textarea>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ===== 4. 인수인계 서류 및 기타 ===== -->
+  <table border="1" cellpadding="6" cellspacing="0"
+         style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+    <thead>
+      <tr style="background-color: #e6e8eb;">
+        <th colspan="2" style="text-align: left; padding: 6px 10px; font-size: 10pt;">
+          4. 인수∙인계 서류 및 기타
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- 서류 -->
+      <tr>
+        <td style="background-color: #f5f6f8; font-weight: bold; text-align: center; width: 20%; vertical-align: top;">
+          서 류
+        </td>
+        <td>
+          <textarea name="documents"
+                    data-id="apprPostParam14"
+                    style="width: 98%; min-height: 50px; border: none; font-family: inherit; font-size: 10pt; resize: vertical;"
+                    >{documents}</textarea>
+        </td>
+      </tr>
+      <!-- 기타 -->
+      <tr>
+        <td style="background-color: #f5f6f8; font-weight: bold; text-align: center; vertical-align: top;">
+          기타<br>(공유폴더(NAS) 등)
+        </td>
+        <td>
+          <textarea name="others"
+                    data-id="apprPostParam15"
+                    style="width: 98%; min-height: 50px; border: none; font-family: inherit; font-size: 10pt; resize: vertical;"
+                    >{others}</textarea>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ===== 5. PMS 업무일지 최종입력 일자 ===== -->
+  <table border="1" cellpadding="6" cellspacing="0"
+         style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+    <tbody>
+      <tr>
+        <td style="background-color: #f5f6f8; font-weight: bold; width: 40%;">
+          5. PMS 업무일지 최종입력 일자
+        </td>
+        <td>
+          <input type="text" name="pmsLastDate"
+                 data-id="apprPostParam16"
+                 value="{pms_last_date}"
+                 style="border: none; font-family: inherit; font-size: 10pt;" />
+          년&nbsp;
+          <input type="text" name="pmsMonth"
+                 data-id="apprPostParam17"
+                 value="{pms_month}"
+                 style="width: 30px; border: none; font-family: inherit; font-size: 10pt;" />
+          월&nbsp;
+          <input type="text" name="pmsDay"
+                 data-id="apprPostParam18"
+                 value="{pms_day}"
+                 style="width: 30px; border: none; font-family: inherit; font-size: 10pt;" />
+          일
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ===== 제출 문구 및 서명란 ===== -->
+  <div style="text-align: center; margin-bottom: 10px; font-size: 10pt;">
+    위와 같이 인수인계서를 제출합니다.
+  </div>
+  <div style="text-align: center; margin-bottom: 20px; font-size: 10pt;">
+    {submit_year}년&nbsp;&nbsp;{submit_month}월&nbsp;&nbsp;{submit_day}일
+  </div>
+
+  <table border="0" cellpadding="6" cellspacing="0"
+         style="width: 60%; margin: 0 auto; font-size: 10pt;">
+    <tbody>
+      <tr>
+        <td style="text-align: right; width: 40%;">인계자 :</td>
+        <td style="border-bottom: 1px solid #333; width: 45%;">
+          <input type="text" name="sigHandOver"
+                 value="{hand_over_name}"
+                 style="border: none; width: 90%; font-family: inherit; font-size: 10pt;" />
+        </td>
+        <td style="width: 15%; text-align: center;">(인)</td>
+      </tr>
+      <tr>
+        <td style="text-align: right;">인수자 :</td>
+        <td style="border-bottom: 1px solid #333;">
+          <input type="text" name="sigHandIn"
+                 value="{hand_in_name}"
+                 style="border: none; width: 90%; font-family: inherit; font-size: 10pt;" />
+        </td>
+        <td style="text-align: center;">(인)</td>
+      </tr>
+      <tr>
+        <td style="text-align: right;">부서장 :</td>
+        <td style="border-bottom: 1px solid #333;">
+          <input type="text" name="sigManager"
+                 data-id="apprPostParam19"
+                 value="{dept_manager}"
+                 style="border: none; width: 90%; font-family: inherit; font-size: 10pt;" />
+        </td>
+        <td style="text-align: center;">(인)</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div><!-- /font-family div -->
+
+</div><!-- /data-id="appContent" -->

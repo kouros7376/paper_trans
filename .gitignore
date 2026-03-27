@@ -1,0 +1,26 @@
+# 환경 변수 (API 키 등 민감 정보)
+.env
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+
+# 업로드/변환 임시 파일
+webapp/uploads/
+webapp/converted/
+webapp/conversion_history.txt
+
+# 테스트 출력
+test_output/
+
+# IDE/에디터
+.vscode/
+.idea/
+*.swp
+
+# Claude 설정 (로컬 전용)
+.claude/
+
+# Playwright MCP (로컬 전용)
+.playwright-mcp/

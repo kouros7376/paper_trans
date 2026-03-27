@@ -1,0 +1,1129 @@
+다우오피스 전자결재 연동 기술 가이드	v1.0
+
+
+
+다우오피스(DaouOffice)
+
+전자결재 연동 기술 가이드
+
+사내 고유 결재양식 → 다우오피스 OpenAPI 연동
+
+
+
+API Version: v4 (차세대)
+
+문서 버전: 1.0  |  작성일: 2026-03-19
+
+보안 등급: 사내 기밀 (Confidential)
+
+
+
+
+목차 (Table of Contents)
+
+1. 환경 설정 및 인증 (Prerequisites)
+
+2. 결재양식 연동 아키텍처 (Workflow)
+
+3. 자동 계산 스크립트 구현 (Script Integration)
+
+4. 코드 스니펫 및 예시 (Implementation)
+
+5. 오류 처리 및 트러블슈팅
+
+6. 부록: API 엔드포인트 전체 목록
+
+
+
+
+1. 환경 설정 및 인증 (Prerequisites)
+
+1.1 사전 요구사항
+
+다우오피스 OpenAPI 연동을 위해서는 다음의 사전 조건이 충족되어야 합니다.
+
+다우오피스 그룹웨어 버전 2.5.5 이상 필수 (SystemAdmin > 시스템 관리 > 업데이트에서 현재 버전 확인)
+
+OpenAPI 연동 신청 완료: 다우오피스 API 센터에서 1:1 문의하기 > 요청 구분 "신청" 선택 후 제출
+
+다우기술 측에서 OpenAPI 표준연동 활성화 완료 후 안내 수신
+
+SSL/TLS 통신 환경: 모든 API 호출은 HTTPS 프로토콜을 사용 (https://api.daouoffice.com)
+
+외부 시스템 서버에서 DOAS 서버(api.daouoffice.com, doas.daouoffice.com)에 대한 네트워크 접근 허용
+
+1.2 인증키 발급 및 확인
+
+연동 활성화 후, Site Admin 페이지에서 인증키를 확인합니다.
+
+인증키 확인 경로
+
+Site Admin > 시스템 연동 > 연동관리 > OpenAPI(기본) > 인증키 발급 영역
+
+항목
+
+설명
+
+클라이언트 아이디 (clientId)
+
+회사 고유 식별자. API 호출 시 인증에 사용.
+
+클라이언트 비밀번호 (clientSecret)
+
+회사 고유 비밀키. clientId와 함께 인증에 사용.
+
+인증키 발급 일시
+
+최초 발급 시점 기록. 재발급 시 갱신됨.
+
+⚠ 테스트 및 실제 사용을 위해 clientId와 clientSecret을 안전한 장소에 별도 보관하십시오. 재발급 시 기존 키는 즉시 무효화됩니다.
+
+1.3 인증 방식
+
+다우오피스 OpenAPI는 두 가지 인증 방식을 지원합니다.
+
+인증 방식
+
+설명
+
+적용 시나리오
+
+API 키
+
+clientId + clientSecret을 JSON Body로 전송하여 인증
+
+서버 간 통신, 백엔드 연동 시 권장
+
+OAuth 2.0
+
+OAuth 토큰 기반 인증. Access Token 획득 후 API 호출
+
+사용자 대리 인증, 타사 서비스 연동
+
+API 키 인증 방식 (권장)
+
+가장 기본적인 인증 방식으로, 모든 API 호출 시 Request Body에 clientId와 clientSecret을 포함하여 전송합니다.
+
+// 계정 정보 조회 API 예시
+
+POST https://api.daouoffice.com/public/v1/account
+
+Content-Type: application/json
+
+
+
+{
+
+  "clientId": "YOUR_CLIENT_ID",
+
+  "clientSecret": "YOUR_CLIENT_SECRET"
+
+}
+
+OAuth 2.0 인증 방식
+
+OAuth 방식 선택 시, Site Admin 연동관리 페이지에서 연동 인증 형태를 "OAuth"로 설정한 후 Access Token을 발급받아 사용합니다.
+
+1.4 API 활성화 설정
+
+인증키 확인 후 사용할 API 기능을 활성화해야 합니다.
+
+API 추가 경로
+
+Site Admin > 시스템 연동 > 연동관리 > [API 추가] 클릭 > 분류에서 "전자결재 연동" 선택 > [저장]
+
+분류
+
+설명
+
+계정 조회
+
+계정 정보 조회 API
+
+조직도 조회
+
+부서/직위/직급/직책 정보 조회 API
+
+전자결재 연동
+
+전자결재 기안, 본문 조회, 처리상태 콜백 API
+
+근태 연동
+
+근태 기록/유형/이력 조회 API
+
+Works 연동
+
+Works 데이터 등록/수정/삭제 API
+
+알림 연동
+
+알림 발송 API
+
+⚠ 시스템 연동 사용을 [사용]으로 설정해야 모든 API가 정상 동작합니다. 하늘색으로 활성화되면 정상 저장된 것입니다.
+
+
+
+
+2. 결재양식 연동 아키텍처 (Workflow)
+
+2.1 전체 프로세스 개요
+
+사내 시스템(ERP, 그룹웨어 등)에서 다우오피스 전자결재로 양식을 전송하는 연동 프로세스는 다음과 같습니다.
+
+① 사전 설정 (1회성)
+
+Site Admin에서 결재 양식 생성 및 시스템 연동 설정
+
+양식에 고유 코드(예: SlipCredit) 부여 및 HTML 본문에 data-id 태그 삽입
+
+② 런타임 연동 프로세스
+
+사내 시스템에서 결재 데이터 준비 (엑셀/HWP 양식의 데이터를 HTML로 변환)
+
+결재 기안 API 호출 (POST /public/v4/approval/document/popup)
+
+다우오피스에서 전자결재 기안 화면 팝업 표시
+
+결재자 승인/반려 처리
+
+callbackUrl로 처리 상태 전송 (사내 시스템으로 결과 통보)
+
+2.2 전자결재 양식 설정 (사전 설정)
+
+결재 양식을 다우오피스에 등록하고 시스템 연동을 활성화하는 과정입니다.
+
+Step 1: 결재 양식 기본 설정
+
+Site Admin > 메뉴 관리 > 전자결재 > 결재 양식 > 양식 상세 설정에서:
+
+결재양식 제목, 약어, 사용여부 설정
+
+시스템 연동: [사용] 체크 후 "전자결재연동_v4" 셀렉트 박스 선택
+
+코드: 외부 시스템에서 사용할 양식의 고유 코드 입력 (예: SlipCredit)
+
+Step 2: 양식 편집기 HTML 설정
+
+양식 편집기에서 결재 양식 제목, 결재방 등을 설정한 후, 하단의 [HTML 편집기] 탭을 선택하여 다음의 data-id 태그를 추가합니다.
+
+⚠ 인쇄(Print)가 필요한 경우 양식 폭(width)을 800px 이내로 설정하는 것을 권장합니다.
+
+data-id 태그
+
+설명
+
+<div data-id="appContent">
+
+결재 본문 영역. API로 전달된 content가 자동 삽입됨.
+
+<div data-id="appTitle">
+
+제목 연동 영역. HTML 본문의 제목 부분에 추가.
+
+<div data-id="apprPostParam{n}">
+
+필드 연동 영역. {n}은 순번으로 각 필드에 데이터 바인딩.
+
+2.3 핵심 엔드포인트: 전자결재 기안 API
+
+항목
+
+상세
+
+Endpoint
+
+POST /public/v4/approval/document/popup
+
+Base URL
+
+https://api.daouoffice.com
+
+Content-Type
+
+multipart/form-data
+
+응답
+
+다우오피스 전자결재 기안 화면 팝업 (HTML 리다이렉트)
+
+프로토콜
+
+HTTPS (SSL/TLS 필수)
+
+필수 파라미터
+
+파라미터
+
+타입
+
+필수
+
+설명
+
+clientId
+
+String
+
+Y
+
+인증 클라이언트 아이디
+
+clientSecret
+
+String
+
+Y
+
+인증 클라이언트 비밀번호
+
+formCode
+
+String
+
+Y
+
+결재 양식 고유 코드 (예: SlipCredit)
+
+title
+
+String
+
+Y
+
+기안 문서 제목
+
+draftEmpNo
+
+String
+
+Y
+
+기안자 사원번호 (다우오피스 등록 사번과 동일)
+
+content
+
+String
+
+Y
+
+결재 본문 HTML 코드 (자동계산 스크립트 포함 가능)
+
+productName
+
+String
+
+N
+
+제휴 서비스/제품명
+
+productVersion
+
+String
+
+N
+
+제휴 서비스/제품 버전
+
+clientCompanyName
+
+String
+
+N
+
+제휴 서비스/제품 식별번호
+
+attaches
+
+File[]
+
+N
+
+첨부파일 (복수 가능)
+
+allianceInfo
+
+JSON
+
+N
+
+연동 정보 (JSON 형식)
+
+callbackUrl
+
+String
+
+N
+
+결재 처리상태 콜백 수신 URL
+
+partnerDocId
+
+String
+
+N
+
+파트너 문서 고유 ID
+
+
+
+
+3. 자동 계산 스크립트 구현 (Script Integration)
+
+3.1 핵심 원리
+
+다우오피스 전자결재 양식은 HTML 기반으로 렌더링됩니다. 따라서 content 필드에 전달하는 HTML 코드 내에 JavaScript를 포함하면, 기안 화면에서 해당 스크립트가 실행됩니다. 엑셀/HWP 양식의 자동 계산 로직을 자바스크립트로 변환하여 HTML 본문에 포함시키는 것이 핵심입니다.
+
+3.2 스크립트 삽입 방법
+
+HTML content 내에 <script> 태그를 삽입하거나, 양식 설정의 스크립트 필드에 파일 경로 또는 스크립트 코드를 직접 입력할 수 있습니다.
+
+방법 1: HTML content 내 인라인 스크립트
+
+API로 전송하는 content 필드의 HTML 말미에 <script> 블록을 추가합니다.
+
+<div data-id="appContent">
+
+  <table id="calcTable">
+
+    <!-- 결재 양식 테이블 내용 -->
+
+  </table>
+
+  <script>
+
+    // 자동 계산 로직
+
+    document.querySelectorAll(".calc-input")
+
+      .forEach(function(el) {
+
+        el.addEventListener("change", calculateTotal);
+
+      });
+
+    function calculateTotal() { /* ... */ }
+
+  </script>
+
+</div>
+
+방법 2: 양식 설정의 스크립트 필드 활용
+
+Site Admin 양식 상세 설정에서 스크립트 항목에 "파일경로" 또는 "스크립트편집"을 선택하여 별도 JS 파일을 등록할 수 있습니다. 이 방법은 양식이 로드될 때마다 자동으로 스크립트가 포함됩니다.
+
+3.3 데이터 바인딩 및 이벤트 핸들러
+
+apprPostParam 태그를 활용하여 외부 시스템의 데이터를 양식 필드에 바인딩하고, 이벤트 핸들러로 사용자 입력 시 자동 계산을 트리거합니다.
+
+<!-- 필드 바인딩 예시 -->
+
+<input type="number" name="unitPrice"
+
+       data-id="apprPostParam1"
+
+       class="calc-input"
+
+       onchange="recalculate()" />
+
+
+
+<input type="number" name="quantity"
+
+       data-id="apprPostParam2"
+
+       class="calc-input"
+
+       onchange="recalculate()" />
+
+
+
+<input type="text" name="totalAmount"
+
+       data-id="apprPostParam3"
+
+       id="totalAmount" readonly />
+
+
+
+<script>
+
+function recalculate() {
+
+  var price = parseFloat(document.querySelector(
+
+    '[name="unitPrice"]').value) || 0;
+
+  var qty = parseFloat(document.querySelector(
+
+    '[name="quantity"]').value) || 0;
+
+  var total = price * qty;
+
+  document.getElementById("totalAmount").value
+
+    = total.toLocaleString();
+
+}
+
+</script>
+
+3.4 엑셀/HWP 수식 변환 가이드
+
+엑셀/HWP 양식의 자동 계산 수식을 자바스크립트로 변환할 때의 권장 패턴입니다.
+
+엑셀 수식 유형
+
+JavaScript 변환
+
+비고
+
+=SUM(A1:A10)
+
+reduce((a,b) => a+b, 0)
+
+범위 합계 → 배열 reduce
+
+=A1*B1
+
+price * quantity
+
+단순 곱셈 → 변수 곱셈
+
+=IF(A1>100,"Y","N")
+
+val > 100 ? "Y" : "N"
+
+조건분기 → 삼항연산자
+
+=ROUND(A1, 2)
+
+Math.round(val*100)/100
+
+반올림 → Math.round
+
+=VLOOKUP(...)
+
+Map 또는 Object lookup
+
+참조 → 데이터 구조 활용
+
+⚠ 스크립트는 표준 브라우저 API(DOM, Math, Array 등)만 사용하십시오. jQuery 등 외부 라이브러리는 다우오피스 환경에서 로드되지 않을 수 있습니다.
+
+
+
+
+4. 코드 스니펫 및 예시 (Implementation)
+
+4.1 전자결재 기안 API 요청 예시
+
+cURL 예시 (multipart/form-data)
+
+curl -X POST "https://api.daouoffice.com/public/v4/approval/document/popup" \
+
+  -F "clientId=YOUR_CLIENT_ID" \
+
+  -F "clientSecret=YOUR_CLIENT_SECRET" \
+
+  -F "formCode=SlipCredit" \
+
+  -F "title=지출품의서 법인카드 - 2026년 3월" \
+
+  -F "draftEmpNo=220125" \
+
+  -F "content=@approval_content.html" \
+
+  -F "callbackUrl=https://erp.yourcompany.com/api/approval/callback" \
+
+  -F "partnerDocId=ERP-2026-00123" \
+
+  -F "productName=사내ERP" \
+
+  -F "productVersion=3.0"
+
+Java (HttpClient) 예시
+
+// Java 11+ HttpClient 예시
+
+HttpClient client = HttpClient.newHttpClient();
+
+
+
+Map<String, String> params = new LinkedHashMap<>();
+
+params.put("clientId", "YOUR_CLIENT_ID");
+
+params.put("clientSecret", "YOUR_CLIENT_SECRET");
+
+params.put("formCode", "SlipCredit");
+
+params.put("title", "지출품의서 법인카드");
+
+params.put("draftEmpNo", "220125");
+
+params.put("content", htmlContent);  // HTML 문자열
+
+params.put("callbackUrl",
+
+  "https://erp.yourcompany.com/api/approval/callback");
+
+params.put("partnerDocId", "ERP-2026-00123");
+
+
+
+String boundary = UUID.randomUUID().toString();
+
+// MultipartBody 구성 후 전송
+
+HttpRequest request = HttpRequest.newBuilder()
+
+  .uri(URI.create("https://api.daouoffice.com
+
+    /public/v4/approval/document/popup"))
+
+  .header("Content-Type",
+
+    "multipart/form-data; boundary=" + boundary)
+
+  .POST(multipartBody)
+
+  .build();
+
+4.2 자동 계산 기능 포함 HTML Content 샘플
+
+아래는 지출품의서 양식에 자동 계산 기능을 포함한 HTML 예시입니다.
+
+<!-- content 필드에 전송할 HTML 예시 -->
+
+<div data-id="appContent"><br></div>
+
+<div style="font-family: malgun gothic, dotum, arial;
+
+  font-size: 10pt; line-height: normal; margin-top: 0px;">
+
+
+
+  <table border="1" cellpadding="5"
+
+    style="width: 800px; border-collapse: collapse;">
+
+    <thead>
+
+      <tr style="background: rgb(230, 232, 235);">
+
+        <th style="width:40px;">번호</th>
+
+        <th style="width:200px;">항목명</th>
+
+        <th style="width:100px;">단가</th>
+
+        <th style="width:80px;">수량</th>
+
+        <th style="width:120px;">금액</th>
+
+        <th style="width:120px;">비고</th>
+
+      </tr>
+
+    </thead>
+
+    <tbody>
+
+      <tr>
+
+        <td>1</td>
+
+        <td><input type="text" name="itemName1"
+
+          data-id="apprPostParam1"
+
+          style="width:100%; border:none;" /></td>
+
+        <td><input type="number" name="unitPrice1"
+
+          data-id="apprPostParam2"
+
+          class="calc-input" data-row="1"
+
+          onchange="calcRow(1)"
+
+          style="width:100%; border:none;
+
+          text-align:right;" /></td>
+
+        <td><input type="number" name="qty1"
+
+          data-id="apprPostParam3"
+
+          class="calc-input" data-row="1"
+
+          onchange="calcRow(1)"
+
+          style="width:100%; border:none;
+
+          text-align:right;" /></td>
+
+        <td><input type="text" name="amount1"
+
+          data-id="apprPostParam4"
+
+          id="amount1" readonly
+
+          style="width:100%; border:none;
+
+          text-align:right; background:#f9f9f9;" /></td>
+
+        <td><input type="text" name="remark1"
+
+          data-id="apprPostParam5"
+
+          style="width:100%; border:none;" /></td>
+
+      </tr>
+
+      <!-- 추가 행 반복 -->
+
+    </tbody>
+
+    <tfoot>
+
+      <tr style="background: #f0f4f8;
+
+        font-weight: bold;">
+
+        <td colspan="4"
+
+          style="text-align:center;">합계</td>
+
+        <td><input type="text" id="grandTotal"
+
+          readonly style="width:100%; border:none;
+
+          text-align:right; font-weight:bold;
+
+          background:transparent;" /></td>
+
+        <td></td>
+
+      </tr>
+
+    </tfoot>
+
+  </table>
+
+
+
+  <script>
+
+  /* === 자동 계산 스크립트 === */
+
+  function calcRow(rowNum) {
+
+    var price = parseFloat(
+
+      document.querySelector(
+
+        '[name="unitPrice'+rowNum+'"]'
+
+      ).value) || 0;
+
+    var qty = parseFloat(
+
+      document.querySelector(
+
+        '[name="qty'+rowNum+'"]'
+
+      ).value) || 0;
+
+    var amount = price * qty;
+
+    document.getElementById(
+
+      'amount' + rowNum
+
+    ).value = amount.toLocaleString('ko-KR');
+
+    calcGrandTotal();
+
+  }
+
+
+
+  function calcGrandTotal() {
+
+    var total = 0;
+
+    document.querySelectorAll(
+
+      '[id^="amount"]'
+
+    ).forEach(function(el) {
+
+      total += parseFloat(
+
+        el.value.replace(/,/g, '')
+
+      ) || 0;
+
+    });
+
+    document.getElementById('grandTotal')
+
+      .value = total.toLocaleString('ko-KR');
+
+  }
+
+
+
+  // 페이지 로드 시 초기 계산 실행
+
+  window.addEventListener('load', function() {
+
+    var rows = document.querySelectorAll(
+
+      '.calc-input'
+
+    );
+
+    rows.forEach(function(el) {
+
+      var rowNum = el.getAttribute('data-row');
+
+      if (rowNum) calcRow(parseInt(rowNum));
+
+    });
+
+  });
+
+  </script>
+
+</div>
+
+
+
+
+4.3 콜백 URL 처리 예시
+
+결재 처리 상태를 수신하기 위한 콜백 서버 예시입니다.
+
+// Node.js Express 콜백 서버 예시
+
+const express = require('express');
+
+const app = express();
+
+app.use(express.json());
+
+
+
+app.post('/api/approval/callback',
+
+  (req, res) => {
+
+  const { docId, status, approverEmpNo,
+
+    approveDate, comment } = req.body;
+
+
+
+  console.log(
+
+    `결재상태: ${status},`,
+
+    `문서: ${docId}`
+
+  );
+
+
+
+  // 처리 상태별 비즈니스 로직
+
+  switch(status) {
+
+    case 'APPROVED':
+
+      // 승인 처리
+
+      break;
+
+    case 'REJECTED':
+
+      // 반려 처리
+
+      break;
+
+    case 'CANCELED':
+
+      // 취소 처리
+
+      break;
+
+  }
+
+
+
+  res.status(200).json({ result: 'OK' });
+
+});
+
+
+
+app.listen(3000);
+
+
+
+
+5. 오류 처리 및 트러블슈팅
+
+5.1 응답 코드
+
+API 호출 결과는 JSON 형식으로 반환되며, code 필드로 성공/실패를 판별합니다.
+
+응답 코드
+
+메시지
+
+설명
+
+200
+
+OK
+
+정상 처리 완료
+
+400
+
+Bad Request
+
+필수 파라미터 누락 또는 형식 오류
+
+401
+
+Unauthorized
+
+clientId/clientSecret 인증 실패
+
+403
+
+Forbidden
+
+API 권한 없음 또는 비활성화 상태
+
+404
+
+Not Found
+
+존재하지 않는 양식 코드 또는 사원번호
+
+500
+
+Internal Server Error
+
+서버 내부 오류 - 다우기술 문의 필요
+
+5.2 주요 트러블슈팅
+
+증상
+
+해결 방법
+
+401 인증 오류
+
+clientId/clientSecret 값 확인. 재발급 여부 확인. Site Admin에서 시스템 연동 사용 상태 확인.
+
+formCode 오류
+
+Site Admin > 결재 양식에서 등록한 코드와 정확히 일치하는지 확인. 대소문자 구분.
+
+draftEmpNo 오류
+
+다우오피스 조직관리 > 멋버통합관리에서 인식번호(사번) 확인. 외부 시스템의 사원번호와 동일해야 함.
+
+스크립트 미실행
+
+브라우저 개발자 도구로 콘솔 오류 확인. 표준 DOM API만 사용. DOMContentLoaded 시점 확인.
+
+콜백 미수신
+
+callbackUrl 서버가 외부에서 접근 가능한지 확인. HTTPS 필수. 방화벽 및 CORS 설정 확인.
+
+5.3 연동 테스트 방법
+
+다우오피스에서는 Talend API Tester (Chrome 확장 프로그램)를 사용한 테스트를 권장합니다.
+
+Chrome에서 Talend API Tester - Free Edition 설치
+
+METHOD: POST, URL: https://api.daouoffice.com/public/v1/account 입력
+
+Headers: Content-Type: application/json 설정
+
+Body에 {"clientId":"...", "clientSecret":"..."} 입력 후 [Send]
+
+Response에서 code: "200", message: "OK" 확인으로 연동 성공 검증
+
+⚠ 전자결재 기안 API 테스트 시 Content-Type을 "Form"으로 설정해야 합니다 (multipart/form-data).
+
+
+
+
+6. 부록: API 엔드포인트 전체 목록
+
+다우오피스 차세대 OpenAPI에서 제공하는 전체 API 목록입니다.
+
+분류
+
+Method
+
+Endpoint
+
+설명
+
+인증키
+
+POST
+
+/public/v1/token
+
+인증키 발급
+
+인증키
+
+POST
+
+/public/v1/token/info
+
+인증키 조회
+
+인증키
+
+POST
+
+/public/v1/token/refresh
+
+인증키 재발급
+
+계정
+
+POST
+
+/public/v1/account
+
+계정 정보 조회
+
+조직
+
+POST
+
+/public/v1/organization/dept
+
+부서 정보 조회
+
+조직
+
+POST
+
+/public/v1/organization/member
+
+부서원 정보 조회
+
+조직
+
+POST
+
+/public/v1/organization/position
+
+직위/직급/직책/그룹 조회
+
+전자결재
+
+POST
+
+/public/v4/approval/document/popup
+
+전자결재 기안
+
+전자결재
+
+POST
+
+/public/v4/approval/document/content
+
+전자결재 본문 조회
+
+전자결재
+
+POST
+
+/public/v4/approval/document/status
+
+처리상태 전송
+
+모바일결재
+
+POST
+
+/public/v4/approval/mobile/save
+
+모바일 본문 저장
+
+모바일결재
+
+POST
+
+/public/v4/approval/mobile/draft
+
+모바일 기안
+
+근태
+
+POST
+
+/public/v1/attendance/record
+
+근태 기록 등록
+
+근태
+
+POST
+
+/public/v1/attendance/type
+
+근태 유형 등록
+
+근태
+
+POST
+
+/public/v1/attendance/history
+
+근태 이력 조회
+
+연차
+
+POST
+
+/public/v1/leave/history
+
+연차 이력 조회
+
+연차
+
+POST
+
+/public/v1/leave/status
+
+연차 현황 조회
+
+알림
+
+POST
+
+/public/v1/notification/send
+
+알림 발송
+
+
+
+⚠ 위 엔드포인트는 다우오피스 공식 문서 기반으로 작성되었으며, API 버전 업데이트에 따라 변경될 수 있습니다. 최신 스펙은 다우오피스 고객케어라운지(manual.daouoffice.co.kr)에서 확인하십시오.
+
+Page
