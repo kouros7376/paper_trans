@@ -59,6 +59,72 @@ def html_escape(text: str) -> str:
             .replace('"', '&quot;'))
 
 
+import re as _re_common
+
+def _is_cell_label(cell_text: str) -> bool:
+    """
+    셀 텍스트가 양식의 라벨(항목명)인지 판정합니다.
+    모든 파서(HWP, DOCX, Excel)에서 공통으로 사용됩니다.
+
+    라벨 예시: "소 속", "직 위", "일        자", "인계자", "서류",
+              "인수∙인계 프로젝트", "인\n계\n자", "1. 인적사항"
+    값 예시: "홍길동", "전략설계1본부", "010-1234-5678", "6,468,294원"
+    """
+    if not cell_text or not cell_text.strip():
+        return False
+
+    text = cell_text.strip()
+    # 줄바꿈 제거한 텍스트 (세로 텍스트 정규화)
+    flat = text.replace('\n', '').replace(' ', '')
+
+    # ── 값으로 확정되는 패턴 (먼저 체크) ──
+    # 숫자/영문/이메일/@/URL 포함 → 값 (단, 섹션 번호 "1." 제외)
+    if _re_common.search(r'[a-zA-Z@]', flat):
+        return False
+    # 순수 숫자 또는 숫자+특수문자 (전화번호, 금액 등)
+    if _re_common.match(r'^[\d,.\-+()/원년월일~\s]+$', flat):
+        return False
+    # 15글자 이상 긴 텍스트 → 값 (문장)
+    if len(flat) > 15:
+        return False
+
+    # ── 라벨로 확정되는 패턴 ──
+    # 1) 세로 텍스트: 한 글자씩 줄바꿈 (예: "인\n계\n자", "선\n결")
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    if len(lines) >= 2 and all(len(l) <= 2 for l in lines):
+        return True
+
+    # 2) 한글 사이 공백 2칸 이상 (예: "일        자", "제  목", "기  타")
+    if _re_common.search(r'[가-힣]  +[가-힣]', text):
+        return True
+
+    # 3) 한글 사이 공백 1칸 + 정규화 6글자 이하 (예: "소 속", "직 위", "휴가 종류")
+    if _re_common.search(r'[가-힣] [가-힣]', text) and len(flat) <= 6:
+        return True
+
+    # 4) 섹션 번호 패턴 (예: "1. 인적사항", "2. 업무 인수∙인계 사항")
+    if _re_common.match(r'^\d+\.\s', text):
+        return True
+
+    # 5) 짧은 한글 복합명사 (2~6글자, 숫자/영문 없음)
+    #    예: "서류", "인계자", "담당자", "사고일시", "인수∙인계"
+    if 2 <= len(flat) <= 6 and _re_common.match(r'^[가-힣∙·()/\s]+$', flat):
+        return True
+
+    return False
+
+
+def _is_section_header(cell_text: str) -> bool:
+    """섹션 제목인지 판정 (예: "1. 인적사항", "주 요 내 용")"""
+    text = cell_text.strip()
+    if _re_common.match(r'^\d+\.\s', text):
+        return True
+    flat = text.replace(' ', '')
+    if 3 <= len(flat) <= 8 and _re_common.search(r'[가-힣]  +[가-힣]', text):
+        return True
+    return False
+
+
 def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
     """
     추출된 데이터를 다우오피스 전자결재용 HTML로 조립합니다.
@@ -523,18 +589,8 @@ def _parse_hwp(file_path: Path) -> tuple:
                 elif i + colspan < len(cleaned):
                     pass  # 중간 빈 셀 병합
 
-                # 라벨 판정: 텍스트 사이에 공백 2개 이상 또는 복합 명사형, 짧은 텍스트
-                is_label = False
-                if cell_text:
-                    import re as _re_lbl
-                    normalized = cell_text.replace('\n', ' ').replace(' ', '')
-                    has_multi_space = bool(_re_lbl.search(r'[가-힣]  +[가-힣]', cell_text))
-                    # 한글 사이 공백 1칸 + 6글자 이하 (예: "소 속", "직 위", "휴가 종류")
-                    has_single_space = bool(_re_lbl.search(r'[가-힣] [가-힣]', cell_text)) and len(normalized) <= 6
-                    # 숫자/영문/긴 텍스트가 포함되면 값으로 판정
-                    has_data = bool(_re_lbl.search(r'[0-9a-zA-Z@]', cell_text)) or len(normalized) > 15
-                    # 라벨 = 공백 패턴이 있는 한글 (다중 공백 또는 짧은 단일 공백)
-                    is_label = (has_multi_space or has_single_space) and not has_data
+                # 공통 라벨 판정 함수 사용
+                is_label = _is_cell_label(cell_text)
 
                 html_row.append({
                     "text": cell_text,
@@ -943,7 +999,6 @@ def _parse_docx(file_path: Path) -> tuple:
     extra_paragraphs = []
 
     # ── 표(Table) 추출 → raw_rows 방식으로 원본 구조 보존 ──
-    import re as _re_docx_lbl
     for table_idx, table in enumerate(doc.tables):
         total_cols = len(table.columns) if table.columns else 1
         raw_rows = []
@@ -961,16 +1016,8 @@ def _parse_docx(file_path: Path) -> tuple:
                 while i + colspan < len(cells) and cells[i + colspan] == cell_text:
                     colspan += 1
 
-                # 라벨 판정
-                is_label = False
-                if cell_text:
-                    normalized = cell_text.replace('\n', ' ').replace(' ', '')
-                    has_multi_space = bool(_re_docx_lbl.search(r'[가-힣]  +[가-힣]', cell_text))
-                    # 한글 사이 공백 1칸 + 6글자 이하 (예: "소 속", "직 위", "휴가 종류")
-                    has_single_space = bool(_re_docx_lbl.search(r'[가-힣] [가-힣]', cell_text)) and len(normalized) <= 6
-                    has_data = bool(_re_docx_lbl.search(r'[0-9a-zA-Z@]', cell_text)) or len(normalized) > 15
-                    # 라벨 = 공백 패턴이 있는 한글 (다중 공백 또는 짧은 단일 공백)
-                    is_label = (has_multi_space or has_single_space) and not has_data
+                # 공통 라벨 판정 함수 사용
+                is_label = _is_cell_label(cell_text)
 
                 html_row.append({
                     "text": cell_text,
