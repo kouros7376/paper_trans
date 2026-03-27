@@ -104,11 +104,78 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
     for table_data in tables:
         caption = table_data.get("caption", "")
         rows = table_data.get("rows", [])
+        # raw_rows: 원본 테이블의 행/열 구조를 그대로 보존한 데이터
+        raw_rows = table_data.get("raw_rows", None)
 
-        if not rows:
+        if not rows and not raw_rows:
             continue
 
-        # 테이블 내 최대 열 수 계산 (multi_cell 행의 셀 수 기준, 최소 2)
+        # ─── raw_rows 모드: 원본 셀 구조 그대로 HTML 변환 ───
+        if raw_rows is not None:
+            total_cols = table_data.get("total_cols", 1)
+            html.append('  <table border="1" cellpadding="6" cellspacing="0"')
+            html.append('         style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">')
+            if caption:
+                html.append('    <thead>')
+                html.append('      <tr style="background-color: #e6e8eb;">')
+                html.append(f'        <th colspan="{total_cols}" style="text-align: left; padding: 6px 10px; font-size: 10pt;">')
+                html.append(f'          {html_escape(caption)}')
+                html.append('        </th>')
+                html.append('      </tr>')
+                html.append('    </thead>')
+            html.append('    <tbody>')
+
+            for row_cells in raw_rows:
+                html.append('      <tr>')
+                for cell in row_cells:
+                    text = cell.get("text", "")
+                    colspan = cell.get("colspan", 1)
+                    rowspan = cell.get("rowspan", 1)
+                    is_label = cell.get("is_label", False)
+                    escaped = html_escape(text)
+
+                    # colspan/rowspan 속성 문자열
+                    span_attr = ""
+                    if colspan > 1:
+                        span_attr += f' colspan="{colspan}"'
+                    if rowspan > 1:
+                        span_attr += f' rowspan="{rowspan}"'
+
+                    if is_label:
+                        # 라벨 셀 (회색 배경, 굵은 글씨)
+                        html.append(f'        <td{span_attr} style="background-color: #f5f6f8; font-weight: bold; '
+                                  f'text-align: center; padding: 6px 10px; white-space: pre-line;">')
+                        html.append(f'          {escaped}')
+                        html.append('        </td>')
+                    elif text.strip():
+                        # 값 셀 (편집 가능한 입력 필드)
+                        param_counter += 1
+                        param_id = f'apprPostParam{param_counter}'
+                        # 여러 줄이면 textarea, 한 줄이면 input
+                        if '\n' in text or len(text) > 100:
+                            html.append(f'        <td{span_attr} style="padding: 6px 10px; vertical-align: top;">')
+                            html.append(f'          <textarea name="field_{param_counter}" data-id="{param_id}" '
+                                      f'style="width: 98%; min-height: 60px; border: none; '
+                                      f'font-family: inherit; font-size: 10pt; resize: vertical;"'
+                                      f'>{escaped}</textarea>')
+                            html.append('        </td>')
+                        else:
+                            html.append(f'        <td{span_attr} style="padding: 6px 10px;">')
+                            html.append(f'          <input type="text" name="field_{param_counter}" '
+                                      f'data-id="{param_id}" value="{escaped}" '
+                                      f'style="width: 95%; border: none; font-family: inherit; font-size: 10pt;" />')
+                            html.append('        </td>')
+                    else:
+                        # 빈 셀
+                        html.append(f'        <td{span_attr} style="padding: 6px 10px;">&nbsp;</td>')
+
+                html.append('      </tr>')
+            html.append('    </tbody>')
+            html.append('  </table>')
+            html.append('')
+            continue
+
+        # ─── 기존 rows 모드 (호환) ───
         max_cols = 2
         for r in rows:
             if r.get("type") == "multi_cell":
@@ -116,8 +183,6 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
 
         html.append('  <table border="1" cellpadding="6" cellspacing="0"')
         html.append('         style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">')
-
-        # 섹션 헤더 (캡션이 있는 경우)
         if caption:
             html.append('    <thead>')
             html.append('      <tr style="background-color: #e6e8eb;">')
@@ -132,14 +197,13 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
         for row in rows:
             label = row.get("label")
             value = row.get("value", "")
-            row_type = row.get("type", "input")  # input, textarea, text, header
+            row_type = row.get("type", "input")
 
             param_counter += 1
             param_id = f'apprPostParam{param_counter}'
             escaped_value = html_escape(value)
 
             if row_type == "header":
-                # 섹션 내 소제목 (전체 열 병합)
                 html.append('      <tr style="background-color: #f0f1f3;">')
                 html.append(f'        <td colspan="{max_cols}" style="font-weight: bold; padding: 6px 10px;">')
                 html.append(f'          {escaped_value}')
@@ -147,26 +211,17 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
                 html.append('      </tr>')
 
             elif row_type == "multi_cell":
-                # 다열 데이터 (HWP 표, Excel 등에서 3열 이상)
                 cells = row.get("cells", [])
                 is_header = row.get("is_header", False)
                 html.append('      <tr>')
                 for ci, cell_val in enumerate(cells):
                     escaped_cv = html_escape(cell_val)
-                    if is_header:
-                        # 헤더 행 (굵은 배경)
-                        html.append(f'        <td style="background-color: #f5f6f8; font-weight: bold; '
-                                  f'text-align: center; padding: 6px 10px;">')
-                        html.append(f'          {escaped_cv}')
-                        html.append('        </td>')
-                    elif ci % 2 == 0 and ci + 1 < len(cells):
-                        # 짝수 인덱스 = 라벨 스타일 (라벨/값 교대 패턴)
+                    if is_header or (ci % 2 == 0 and ci + 1 < len(cells)):
                         html.append(f'        <td style="background-color: #f5f6f8; font-weight: bold; '
                                   f'text-align: center; padding: 6px 10px;">')
                         html.append(f'          {escaped_cv}')
                         html.append('        </td>')
                     else:
-                        # 홀수 인덱스 = 값 스타일
                         param_counter += 1
                         param_id = f'apprPostParam{param_counter}'
                         html.append(f'        <td style="padding: 6px 10px;">')
@@ -177,7 +232,6 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
                 html.append('      </tr>')
 
             elif row_type == "text" or label is None:
-                # 단독 텍스트 (전체 너비)
                 html.append('      <tr>')
                 html.append(f'        <td colspan="{max_cols}" style="text-align: center; padding: 10px;">')
                 html.append(f'          {escaped_value}')
@@ -185,7 +239,6 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
                 html.append('      </tr>')
 
             elif row_type == "textarea":
-                # 여러 줄 입력 필드 (라벨 1칸 + 값 나머지 병합)
                 val_span = max_cols - 1
                 html.append('      <tr>')
                 html.append(f'        <td style="background-color: #f5f6f8; font-weight: bold; '
@@ -201,7 +254,6 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
                 html.append('      </tr>')
 
             else:
-                # 일반 라벨-값 한 줄 입력 필드 (라벨 1칸 + 값 나머지 병합)
                 val_span = max_cols - 1
                 html.append('      <tr>')
                 html.append(f'        <td style="background-color: #f5f6f8; font-weight: bold; '
@@ -403,40 +455,72 @@ def _parse_hwp(file_path: Path) -> tuple:
         if not table_rows:
             continue
 
-        # 행 단위로 HTML 구조 생성
-        rows_data = []
+        # ── 원본 셀 구조를 그대로 보존하여 raw_rows 생성 ──
+        total_cols = max(len(row) for row in table_rows) if table_rows else 1
+        raw_rows = []
+
         for row_cells in table_rows:
-            # 워터마크 셀 제거
+            # 워터마크 셀 텍스트 제거
             cleaned = [c.strip() if c.strip() and not any(s in c for s in SKIP) else ''
                       for c in row_cells]
-            non_empty = [c for c in cleaned if c]
 
-            if not non_empty:
+            # 완전히 빈 행은 건너뛰기
+            if not any(c for c in cleaned):
                 continue
 
-            # 제목 감지
+            # 제목 감지 (유효 텍스트가 1개이고 공백 포함된 짧은 텍스트)
+            non_empty = [c for c in cleaned if c]
             if not title_found and len(non_empty) == 1 and '  ' in non_empty[0] and len(non_empty[0]) < 30:
                 title = non_empty[0]
                 title_found = True
                 continue
 
-            # 행의 유효 셀 수에 따라 처리
-            if len(non_empty) == 1:
-                # 단일 셀 → 전체 너비 텍스트
-                rows_data.append({"label": None, "value": non_empty[0], "type": "text"})
-            elif len(non_empty) == 2:
-                # 2열 → 라벨-값 쌍
-                row_type = "textarea" if '\n' in non_empty[1] or len(non_empty[1]) > 80 else "input"
-                rows_data.append({"label": non_empty[0], "value": non_empty[1], "type": row_type})
-            else:
-                # 3열 이상 → 다열 테이블 행
-                rows_data.append({
-                    "label": None, "value": None,
-                    "type": "multi_cell", "cells": non_empty
-                })
+            # 셀 병합 감지: 연속된 빈 셀은 앞 셀의 colspan으로 처리
+            html_row = []
+            i = 0
+            while i < len(cleaned):
+                cell_text = cleaned[i]
+                colspan = 1
+                # 뒤에 이어지는 빈 셀을 colspan으로 합산
+                while i + colspan < len(cleaned) and cleaned[i + colspan] == '':
+                    colspan += 1
+                # 마지막 열까지 빈 칸이면 남은 열 전체를 병합
+                if i + colspan == len(cleaned) and colspan > 1 and cell_text:
+                    pass  # 이미 올바름
+                elif i + colspan < len(cleaned):
+                    pass  # 중간 빈 셀 병합
 
-        if rows_data:
-            result_tables.append({"caption": "", "rows": rows_data})
+                # 라벨 판정: 텍스트 사이에 공백 2개 이상 또는 복합 명사형, 짧은 텍스트
+                is_label = False
+                if cell_text:
+                    import re as _re_lbl
+                    normalized = cell_text.replace('\n', ' ').replace(' ', '')
+                    has_multi_space = bool(_re_lbl.search(r'[가-힣]  +[가-힣]', cell_text))
+                    # 한글 사이 공백 1칸 + 6글자 이하 (예: "소 속", "직 위", "휴가 종류")
+                    has_single_space = bool(_re_lbl.search(r'[가-힣] [가-힣]', cell_text)) and len(normalized) <= 6
+                    # 숫자/영문/긴 텍스트가 포함되면 값으로 판정
+                    has_data = bool(_re_lbl.search(r'[0-9a-zA-Z@]', cell_text)) or len(normalized) > 15
+                    # 라벨 = 공백 패턴이 있는 한글 (다중 공백 또는 짧은 단일 공백)
+                    is_label = (has_multi_space or has_single_space) and not has_data
+
+                html_row.append({
+                    "text": cell_text,
+                    "colspan": colspan,
+                    "rowspan": 1,
+                    "is_label": is_label,
+                })
+                i += colspan
+
+            if html_row:
+                raw_rows.append(html_row)
+
+        if raw_rows:
+            result_tables.append({
+                "caption": "",
+                "rows": [],
+                "raw_rows": raw_rows,
+                "total_cols": total_cols,
+            })
 
     return title, result_tables, body_paragraphs
 
@@ -795,46 +879,55 @@ def _parse_docx(file_path: Path) -> tuple:
     tables = []
     extra_paragraphs = []
 
-    # ── 표(Table) 추출 ──
+    # ── 표(Table) 추출 → raw_rows 방식으로 원본 구조 보존 ──
+    import re as _re_docx_lbl
     for table_idx, table in enumerate(doc.tables):
-        rows_data = []
+        total_cols = len(table.columns) if table.columns else 1
+        raw_rows = []
+
         for row in table.rows:
             cells = [cell.text.strip() for cell in row.cells]
 
-            # 셀 병합으로 인한 중복 제거
-            unique_cells = []
-            prev = None
-            for c in cells:
-                if c != prev:
-                    unique_cells.append(c)
-                    prev = c
+            # 셀 병합 감지: python-docx는 병합된 셀을 동일 텍스트로 반복함
+            html_row = []
+            i = 0
+            while i < len(cells):
+                cell_text = cells[i]
+                colspan = 1
+                # 동일한 텍스트가 연속되면 colspan으로 처리
+                while i + colspan < len(cells) and cells[i + colspan] == cell_text:
+                    colspan += 1
 
-            if len(unique_cells) == 1:
-                # 단일 셀 → 섹션 헤더 또는 텍스트
-                rows_data.append({
-                    "label": None,
-                    "value": unique_cells[0],
-                    "type": "header" if unique_cells[0] else "text"
-                })
-            elif len(unique_cells) == 2:
-                # 라벨-값 쌍
-                label, value = unique_cells[0], unique_cells[1]
-                row_type = "textarea" if '\n' in value or len(value) > 80 else "input"
-                rows_data.append({"label": label, "value": value, "type": row_type})
-            elif len(unique_cells) >= 3:
-                # 3열 이상 → multi_cell 타입으로 출력
-                # 전자결재 양식의 전형적인 4열 구조: 라벨|값|라벨|값
-                # is_header = False → 짝수/홀수 교대 패턴(라벨/값) 적용
-                rows_data.append({
-                    "label": None,
-                    "value": "",
-                    "type": "multi_cell",
-                    "cells": unique_cells,
-                    "is_header": False,
-                })
+                # 라벨 판정
+                is_label = False
+                if cell_text:
+                    normalized = cell_text.replace('\n', ' ').replace(' ', '')
+                    has_multi_space = bool(_re_docx_lbl.search(r'[가-힣]  +[가-힣]', cell_text))
+                    # 한글 사이 공백 1칸 + 6글자 이하 (예: "소 속", "직 위", "휴가 종류")
+                    has_single_space = bool(_re_docx_lbl.search(r'[가-힣] [가-힣]', cell_text)) and len(normalized) <= 6
+                    has_data = bool(_re_docx_lbl.search(r'[0-9a-zA-Z@]', cell_text)) or len(normalized) > 15
+                    # 라벨 = 공백 패턴이 있는 한글 (다중 공백 또는 짧은 단일 공백)
+                    is_label = (has_multi_space or has_single_space) and not has_data
 
-        if rows_data:
-            tables.append({"caption": "", "rows": rows_data})
+                html_row.append({
+                    "text": cell_text,
+                    "colspan": colspan,
+                    "rowspan": 1,
+                    "is_label": is_label,
+                })
+                i += colspan
+
+            # 완전히 빈 행은 건너뛰기
+            if any(c["text"] for c in html_row):
+                raw_rows.append(html_row)
+
+        if raw_rows:
+            tables.append({
+                "caption": "",
+                "rows": [],
+                "raw_rows": raw_rows,
+                "total_cols": total_cols,
+            })
 
     # ── 본문 문단 추출 및 섹션 제목 → 테이블 캡션 연결 ──
     # python-docx의 doc.element.body를 순회하여 문단-테이블 순서를 파악
@@ -845,6 +938,12 @@ def _parse_docx(file_path: Path) -> tuple:
     # 테이블에서 이미 추출된 텍스트를 수집 (중복 출력 방지)
     table_texts = set()
     for tbl in tables:
+        # raw_rows 방식
+        for rr in tbl.get("raw_rows", []):
+            for cell in rr:
+                if cell.get("text", "").strip():
+                    table_texts.add(cell["text"].strip())
+        # 기존 rows 방식 (호환)
         for r in tbl.get("rows", []):
             if r.get("value"):
                 table_texts.add(r["value"].strip())
