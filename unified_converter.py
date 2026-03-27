@@ -522,113 +522,93 @@ def _parse_hwp(file_path: Path) -> tuple:
                         '담당', '이사', '본부장', '사장', '대표이사', '부사장', '전무', '상무'}
 
     for table_rows in all_tables:
-        # table_rows = [[셀1, 셀2, ...], [셀1, 셀2, ...], ...] (행 단위)
+        # table_rows = [[{text, colspan, rowspan}, ...], ...] (새 형식: 딕셔너리)
 
-        # 전체 셀 텍스트를 평면화하여 워터마크/결재란 검사
-        all_cell_texts = [c.strip() for row in table_rows for c in row if c.strip()]
-        # 워터마크 포함 셀 제거
-        has_watermark = any(any(skip in t for skip in SKIP) for t in all_cell_texts)
-        clean_texts = [t for t in all_cell_texts if not any(skip in t for skip in SKIP)]
+        # 전체 셀 텍스트 추출 (워터마크/결재란 검사용)
+        all_cell_texts = []
+        for row in table_rows:
+            for cell in row:
+                t = cell["text"].strip() if isinstance(cell, dict) else str(cell).strip()
+                if t:
+                    all_cell_texts.append(t)
 
+        clean_texts = [t for t in all_cell_texts if not any(s in t for s in SKIP)]
         if not clean_texts:
             continue
 
-        # 결재란 행 제거 (행 내에 결재 키워드가 포함되면 해당 행만 제거)
+        # 결재란 행 제거
         filtered_rows = []
         for row_cells in table_rows:
-            row_texts = [c.strip() for c in row_cells if c.strip()]
-            row_clean = [t for t in row_texts if not any(s in t for s in SKIP)]
-            approval_in_row = sum(1 for c in row_clean if c in APPROVAL_KEYWORDS)
+            row_texts = []
+            for cell in row_cells:
+                t = cell["text"].strip() if isinstance(cell, dict) else str(cell).strip()
+                if t and not any(s in t for s in SKIP):
+                    row_texts.append(t)
+            approval_in_row = sum(1 for c in row_texts if c in APPROVAL_KEYWORDS)
             if approval_in_row >= 2:
-                # 결재란 행 → 건너뛰되 제목은 추출
-                for c in row_clean:
-                    if (c not in APPROVAL_KEYWORDS and '  ' in c and len(c) < 30
-                            and not c.endswith(':')):
-                        title = c
-                        title_found = True
-                        break
+                # 결재란 행 → 건너뛰되 제목 추출 시도
+                for c in row_texts:
+                    if c not in APPROVAL_KEYWORDS and len(c) < 30:
+                        candidate = c.replace('\n', '').replace(' ', '')
+                        if 2 <= len(candidate) <= 15:
+                            title = c
+                            title_found = True
+                            break
                 continue
             filtered_rows.append(row_cells)
-        table_rows = filtered_rows
 
-        if not table_rows:
+        if not filtered_rows:
             continue
 
-        # ── 원본 셀 구조를 그대로 보존하여 raw_rows 생성 ──
-        total_cols = max(len(row) for row in table_rows) if table_rows else 1
+        # ── HWP 바이너리에서 읽은 정확한 colspan/rowspan을 그대로 사용 ──
+        total_cols = 0
+        for row in filtered_rows:
+            row_cols = sum(cell.get("colspan", 1) if isinstance(cell, dict) else 1 for cell in row)
+            total_cols = max(total_cols, row_cols)
+        if total_cols == 0:
+            total_cols = 1
+
         raw_rows = []
-
-        for row_cells in table_rows:
-            # 워터마크 셀 텍스트 제거
-            cleaned = [c.strip() if c.strip() and not any(s in c for s in SKIP) else ''
-                      for c in row_cells]
-
-            # 완전히 빈 행은 건너뛰기
-            if not any(c for c in cleaned):
-                continue
-
-            # 제목 감지 (유효 텍스트가 1개이고 공백 포함된 짧은 텍스트)
-            non_empty = [c for c in cleaned if c]
-            if not title_found and len(non_empty) == 1 and '  ' in non_empty[0] and len(non_empty[0]) < 30:
-                title = non_empty[0]
-                title_found = True
-                continue
-
-            # 셀 병합 감지: 연속된 빈 셀은 앞 셀의 colspan으로 처리
+        for row_cells in filtered_rows:
             html_row = []
-            i = 0
-            while i < len(cleaned):
-                cell_text = cleaned[i]
-                colspan = 1
-                # 뒤에 이어지는 빈 셀을 colspan으로 합산
-                while i + colspan < len(cleaned) and cleaned[i + colspan] == '':
-                    colspan += 1
-                # 마지막 열까지 빈 칸이면 남은 열 전체를 병합
-                if i + colspan == len(cleaned) and colspan > 1 and cell_text:
-                    pass  # 이미 올바름
-                elif i + colspan < len(cleaned):
-                    pass  # 중간 빈 셀 병합
+            has_content = False
+            for cell in row_cells:
+                if isinstance(cell, dict):
+                    text = cell["text"].strip()
+                    # 워터마크 텍스트 제거
+                    if any(s in text for s in SKIP):
+                        text = ""
+                    cs = cell.get("colspan", 1)
+                    rs = cell.get("rowspan", 1)
+                else:
+                    text = str(cell).strip()
+                    cs = 1
+                    rs = 1
 
-                # 공통 라벨 판정 함수 사용
-                is_label = _is_cell_label(cell_text)
+                if text:
+                    has_content = True
 
                 html_row.append({
-                    "text": cell_text,
-                    "colspan": colspan,
-                    "rowspan": 1,
-                    "is_label": is_label,
+                    "text": text,
+                    "colspan": cs,
+                    "rowspan": rs,
+                    "is_label": _is_cell_label(text),
                 })
-                i += colspan
 
-            if html_row:
+            # 제목 감지
+            non_empty = [c for c in html_row if c["text"]]
+            if not title_found and len(non_empty) == 1:
+                t = non_empty[0]["text"]
+                flat = t.replace('\n', '').replace(' ', '')
+                if 2 <= len(flat) <= 15 and '  ' in t:
+                    title = t
+                    title_found = True
+                    continue
+
+            if has_content:
                 raw_rows.append(html_row)
 
-        # ── rowspan 후처리: 첫 번째 셀(col 0)만 rowspan 감지 ──
-        # (전자결재 양식에서 rowspan이 가장 흔한 위치가 첫 번째 열)
-        if raw_rows and len(raw_rows) > 1:
-            ri = 0
-            while ri < len(raw_rows):
-                first_cell = raw_rows[ri][0] if raw_rows[ri] else None
-                if first_cell and first_cell["text"].strip():
-                    # 아래 행의 첫 셀이 비어있으면 rowspan 증가
-                    span = 1
-                    for next_ri in range(ri + 1, len(raw_rows)):
-                        next_first = raw_rows[next_ri][0] if raw_rows[next_ri] else None
-                        if next_first and not next_first["text"].strip():
-                            span += 1
-                            next_first["_remove"] = True
-                        else:
-                            break
-                    if span > 1:
-                        first_cell["rowspan"] = span
-                    ri += span
-                else:
-                    ri += 1
-
-            # _remove 표시된 셀 제거
-            for row in raw_rows:
-                row[:] = [cell for cell in row if not cell.get("_remove", False)]
-
+        if raw_rows:
             result_tables.append({
                 "caption": "",
                 "rows": [],
@@ -668,33 +648,54 @@ def _hwp_parse_with_structure(section_data: bytes) -> tuple:
     paragraphs = []       # 결과: 표 밖 문단
 
     # 현재 파싱 상태
-    current_table = {}    # {(row, col): text} 매핑
+    current_table = {}    # {(row, col): {"text": str, "colspan": int, "rowspan": int}}
     current_cell_text = []
     current_cell_pos = None  # (row, col)
+    current_cell_span = (1, 1)  # (col_span, row_span)
     in_table = False
     max_row = 0
     max_col = 0
 
     def _flush_cell():
-        """현재 셀의 텍스트를 테이블 딕셔너리에 저장"""
+        """현재 셀의 텍스트와 병합 정보를 테이블 딕셔너리에 저장"""
         nonlocal current_cell_text, current_cell_pos
-        if current_cell_pos is not None and current_cell_text:
-            current_table[current_cell_pos] = '\n'.join(current_cell_text)
+        if current_cell_pos is not None:
+            text = '\n'.join(current_cell_text) if current_cell_text else ''
+            current_table[current_cell_pos] = {
+                "text": text,
+                "colspan": current_cell_span[0],
+                "rowspan": current_cell_span[1],
+            }
         current_cell_text = []
 
     def _flush_table():
-        """현재 테이블을 행 단위 리스트로 변환하여 저장"""
+        """현재 테이블을 raw_rows 형식으로 변환하여 저장"""
         nonlocal current_table, in_table, max_row, max_col, current_cell_pos
         _flush_cell()
         if current_table:
-            # 딕셔너리를 행 단위 리스트로 변환
+            # 병합된 셀이 차지하는 위치를 추적 (중복 출력 방지)
+            merged_positions = set()
+            for (r, c), info in current_table.items():
+                cs = info.get("colspan", 1)
+                rs = info.get("rowspan", 1)
+                for dr in range(rs):
+                    for dc in range(cs):
+                        if dr != 0 or dc != 0:
+                            merged_positions.add((r + dr, c + dc))
+
+            # 행 단위 리스트로 변환 (병합 정보 포함)
             row_list = []
             for r in range(max_row + 1):
                 row_cells = []
                 for c in range(max_col + 1):
-                    row_cells.append(current_table.get((r, c), ''))
-                # 빈 행이 아닌 경우만 추가
-                if any(cell.strip() for cell in row_cells):
+                    if (r, c) in merged_positions:
+                        continue  # 병합으로 가려진 셀은 건너뛰기
+                    info = current_table.get((r, c))
+                    if info:
+                        row_cells.append(info)
+                    else:
+                        row_cells.append({"text": "", "colspan": 1, "rowspan": 1})
+                if row_cells:
                     row_list.append(row_cells)
             if row_list:
                 tables.append(row_list)
@@ -731,21 +732,26 @@ def _hwp_parse_with_structure(section_data: bytes) -> tuple:
                 max_row = 0
                 max_col = 0
 
-        # ── L2 LIST_HEADER(72): 새 셀 시작 + 위치 정보 파싱 ──
+        # ── L2 LIST_HEADER(72): 새 셀 시작 + 위치/병합 정보 파싱 ──
         elif tag == 72 and level >= 2:
             _flush_cell()
-            # LIST_HEADER 페이로드에서 행/열 위치 추출
+            # LIST_HEADER 페이로드에서 행/열 위치 + colspan/rowspan 추출
             payload = section_data[pos:pos + size]
             if size >= 16:  # 최소 8개 uint16 필요
-                col = struct.unpack_from('<H', payload, 8)[0]   # offset 8: col
-                row = struct.unpack_from('<H', payload, 10)[0]  # offset 10: row
+                col = struct.unpack_from('<H', payload, 8)[0]       # offset 8: col
+                row = struct.unpack_from('<H', payload, 10)[0]      # offset 10: row
+                col_span = struct.unpack_from('<H', payload, 12)[0] # offset 12: col_span
+                row_span = struct.unpack_from('<H', payload, 14)[0] # offset 14: row_span
                 current_cell_pos = (row, col)
-                if row > max_row:
-                    max_row = row
-                if col > max_col:
-                    max_col = col
+                current_cell_span = (max(col_span, 1), max(row_span, 1))
+                # 병합 범위를 고려한 최대 행/열 계산
+                if row + row_span - 1 > max_row:
+                    max_row = row + row_span - 1
+                if col + col_span - 1 > max_col:
+                    max_col = col + col_span - 1
             else:
                 current_cell_pos = None
+                current_cell_span = (1, 1)
 
         # ── PARA_TEXT(67): 텍스트 추출 ──
         elif tag == 67:
