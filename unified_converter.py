@@ -291,6 +291,11 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
             if not stripped:
                 continue
 
+            # 이미지 마커는 정규식 검사 없이 바로 일반 문단으로 분류
+            if stripped.startswith('__IMG__'):
+                other_rows.append(stripped)
+                continue
+
             if submit_pattern.search(stripped):
                 submit_rows.append({"type": "submit_text", "value": stripped})
             elif date_pattern.search(stripped):
@@ -312,6 +317,13 @@ def build_daou_html(title: str, tables: list, paragraphs: list = None) -> str:
 
         # 일반 문단 먼저 출력
         for text in other_rows:
+            # 이미지 마커 처리
+            if text.startswith('__IMG__'):
+                img_src = text[7:]
+                html.append(f'  <div style="text-align: center; margin: 16px 0;">')
+                html.append(f'    <img src="{img_src}" style="max-width: 200px; height: auto;" />')
+                html.append(f'  </div>')
+                continue
             param_counter += 1
             html.append(f'  <div style="margin-bottom: 8px;">')
             html.append(f'    <p>{html_escape(text)}</p>')
@@ -396,6 +408,26 @@ def _parse_hwp(file_path: Path) -> tuple:
         ole.close()
         raise ValueError("암호화된 HWP 파일은 지원하지 않습니다.")
 
+    # ── BinData에서 이미지 추출 (로고 등) ──
+    import base64 as _b64
+    embedded_images = []  # base64 인코딩된 이미지 목록
+    for stream in ole.listdir():
+        path = '/'.join(stream)
+        if path.startswith('BinData/') and any(path.lower().endswith(ext) for ext in ('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+            try:
+                img_data = ole.openstream(path).read()
+                # 압축된 이미지 → zlib 해제 시도
+                try:
+                    img_data = zlib.decompress(img_data, -15)
+                except zlib.error:
+                    pass  # 이미 비압축 상태
+                ext = path.rsplit('.', 1)[-1].lower()
+                mime = {'jpg': 'jpeg', 'jpeg': 'jpeg', 'png': 'png', 'gif': 'gif', 'bmp': 'bmp'}.get(ext, 'jpeg')
+                b64 = _b64.b64encode(img_data).decode('ascii')
+                embedded_images.append(f'data:image/{mime};base64,{b64}')
+            except Exception:
+                pass
+
     # BodyText 섹션 추출 → 셀 단위로 파싱
     all_tables = []  # 표 목록 (각 표 = 셀 텍스트 리스트)
     body_paragraphs = []  # 표 밖의 본문 문단
@@ -411,7 +443,8 @@ def _parse_hwp(file_path: Path) -> tuple:
     ole.close()
 
     # 워터마크/불필요 텍스트 필터
-    SKIP = {'문서서식포탈비', '문서서식포탈비즈폼', '폼', '비즈폼'}
+    # 워터마크 텍스트 (정확 일치만 사용하여 오탐 방지)
+    SKIP = {'문서서식포탈비', '문서서식포탈비즈폼', '비즈폼'}
 
     # ── 표 데이터를 다우오피스 HTML 구조로 변환 ──
     title = file_path.stem
@@ -514,13 +547,43 @@ def _parse_hwp(file_path: Path) -> tuple:
             if html_row:
                 raw_rows.append(html_row)
 
-        if raw_rows:
+        # ── rowspan 후처리: 첫 번째 셀(col 0)만 rowspan 감지 ──
+        # (전자결재 양식에서 rowspan이 가장 흔한 위치가 첫 번째 열)
+        if raw_rows and len(raw_rows) > 1:
+            ri = 0
+            while ri < len(raw_rows):
+                first_cell = raw_rows[ri][0] if raw_rows[ri] else None
+                if first_cell and first_cell["text"].strip():
+                    # 아래 행의 첫 셀이 비어있으면 rowspan 증가
+                    span = 1
+                    for next_ri in range(ri + 1, len(raw_rows)):
+                        next_first = raw_rows[next_ri][0] if raw_rows[next_ri] else None
+                        if next_first and not next_first["text"].strip():
+                            span += 1
+                            next_first["_remove"] = True
+                        else:
+                            break
+                    if span > 1:
+                        first_cell["rowspan"] = span
+                    ri += span
+                else:
+                    ri += 1
+
+            # _remove 표시된 셀 제거
+            for row in raw_rows:
+                row[:] = [cell for cell in row if not cell.get("_remove", False)]
+
             result_tables.append({
                 "caption": "",
                 "rows": [],
                 "raw_rows": raw_rows,
                 "total_cols": total_cols,
             })
+
+    # 이미지를 paragraphs 뒤에 추가 (build_daou_html에서 처리)
+    if embedded_images:
+        for img_src in embedded_images:
+            body_paragraphs.append(f'__IMG__{img_src}')
 
     return title, result_tables, body_paragraphs
 
