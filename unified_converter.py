@@ -961,10 +961,9 @@ def _parse_docx(file_path: Path) -> tuple:
     """
     DOCX 파일에서 텍스트와 표를 추출합니다.
 
-    python-docx 라이브러리를 사용하여:
-      - 문단(paragraph) 텍스트 추출
-      - 표(table) → 라벨-값 쌍으로 변환
-      - 스타일에서 제목 자동 감지
+    mammoth 라이브러리로 DOCX → HTML 변환 후,
+    다우오피스 양식에 맞게 래핑합니다.
+    mammoth이 colspan/rowspan/이미지를 정확하게 처리합니다.
 
     Returns:
         (title, tables, paragraphs) 튜플
@@ -1339,10 +1338,83 @@ def convert(input_path: str, output_path: str = None) -> str:
     logger.info("  파일 형식 : %s", ext.upper())
     logger.info("=" * 55)
 
-    # ── 파일 형식별 파서 호출 ──
+    # ── DOCX: mammoth 라이브러리로 고품질 HTML 직접 생성 ──
+    if ext == '.docx':
+        logger.info("[1/2] mammoth로 DOCX → HTML 변환 중...")
+        import mammoth as _mammoth
+        from docx import Document as _DocxDoc
+
+        # mammoth으로 HTML 변환 (테이블 구조/이미지 완벽 보존)
+        with open(str(file_path), 'rb') as f:
+            mammoth_result = _mammoth.convert_to_html(f)
+        body_html = mammoth_result.value
+
+        # 제목 감지 (python-docx 사용)
+        _doc = _DocxDoc(str(file_path))
+        title = ""
+        for para in _doc.paragraphs:
+            if para.style.name.startswith('Heading') or (
+                para.alignment is not None and para.alignment == 1
+            ):
+                if para.text.strip():
+                    title = para.text.strip()
+                    break
+        if not title:
+            for para in _doc.paragraphs:
+                if para.text.strip():
+                    title = para.text.strip()
+                    break
+        if not title:
+            stem = file_path.stem
+            title = stem if not _re_common.match(r'^[0-9a-f]{8}$', stem) else "문서"
+
+        # 다우오피스 양식 래퍼 적용
+        # mammoth HTML의 <table>에 테두리/스타일 추가
+        styled_body = body_html.replace(
+            '<table>',
+            '<table border="1" cellpadding="6" cellspacing="0" '
+            'style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">'
+        ).replace(
+            '<td>',
+            '<td style="padding: 6px 10px;">'
+        ).replace(
+            '<td colspan',
+            '<td style="padding: 6px 10px;" colspan'
+        ).replace(
+            '<td rowspan',
+            '<td style="padding: 6px 10px;" rowspan'
+        )
+
+        html = (
+            '<!-- 다우오피스 전자결재 양식 - mammoth + unified_converter.py 자동 생성 -->\n'
+            '<div data-id="appContent">\n'
+            '\n'
+            '<div style="font-family: \'Malgun Gothic\', dotum, Arial, sans-serif; '
+            'font-size: 10pt; line-height: 1.6; margin: 0 auto; max-width: 800px;">\n'
+            '\n'
+            '  <div data-id="appTitle" style="text-align: center; margin-bottom: 20px;">\n'
+            '    <h2 style="font-size: 16pt; font-weight: bold; letter-spacing: 4px; '
+            'border-bottom: 2px solid #333; padding-bottom: 8px;">\n'
+            f'      {html_escape(title)}\n'
+            '    </h2>\n'
+            '  </div>\n'
+            '\n'
+            f'{styled_body}\n'
+            '\n'
+            '</div><!-- /font-family div -->\n'
+            '</div><!-- /data-id="appContent" -->'
+        )
+
+        logger.info("[2/2] HTML 파일 저장 중...")
+        output_path.write_text(html, encoding='utf-8')
+        logger.info("       → 저장 완료: %s", output_path)
+        logger.info("       → 크기: %s bytes", f"{len(html.encode('utf-8')):,}")
+        logger.info("=" * 55)
+        return str(output_path)
+
+    # ── HWP/Excel/PDF: 기존 파서 호출 ──
     parser_map = {
         '.hwp':  _parse_hwp,
-        '.docx': _parse_docx,
         '.xlsx': _parse_excel,
         '.xls':  _parse_excel,
         '.pdf':  _parse_pdf,
